@@ -12,7 +12,6 @@ plt.rcParams['axes.unicode_minus'] = False
 st.set_page_config(page_title="跨站点选品看板", layout="wide")
 st.title("🎯 跨站点选品看板")
 
-# 当前脚本所在目录（保证云端和本地都能找到文件）
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 @st.cache_data
@@ -44,10 +43,48 @@ def load_rec_data():
 niche_data = load_niche_data()
 rec_data = load_rec_data()
 
+# ===== 🎯 品类选择 =====
 st.sidebar.header("🔧 设置")
-品类 = st.sidebar.selectbox("选择品类", list(niche_data.keys()))
-df = niche_data[品类].copy()
+选项列表 = list(niche_data.keys()) + ['📤 上传新品类CSV']
+模式 = st.sidebar.selectbox("选择品类", 选项列表)
 
+上传的数据 = None
+if 模式 == '📤 上传新品类CSV':
+    st.sidebar.info("💡 从亚马逊 NicheSearch 导出 CSV 上传即可分析")
+    上传文件 = st.sidebar.file_uploader("选择 CSV 文件", type='csv')
+    if 上传文件 is not None:
+        try:
+            df = pd.read_csv(上传文件, header=1)
+            列映射 = {}
+            for col in df.columns:
+                if '客戶' in col or '需求' in col or '利基' in col:
+                    列映射[col] = '利基'
+                elif '搜尋' in col or '搜索' in col:
+                    列映射[col] = '搜索量'
+                elif '價格' in col or '价格' in col:
+                    列映射[col] = '平均价格'
+                elif '退貨' in col or '退货' in col:
+                    列映射[col] = '退货率'
+            df = df.rename(columns=列映射)
+            df = df[['利基', '搜索量', '平均价格', '退货率']]
+            df['搜索量'] = pd.to_numeric(df['搜索量'], errors='coerce')
+            df['平均价格'] = pd.to_numeric(df['平均价格'], errors='coerce')
+            df['退货率'] = pd.to_numeric(df['退货率'], errors='coerce')
+            df = df.dropna()
+            上传的数据 = {'📤 ' + 上传文件.name.replace('.csv', ''): df}
+            品类名 = '📤 ' + 上传文件.name.replace('.csv', '')
+            st.sidebar.success(f"✅ 已加载 {len(df)} 条数据")
+        except Exception as e:
+            st.sidebar.error(f"❌ 读取失败：{e}")
+
+if 上传的数据:
+    品类 = 品类名
+    df = 上传的数据[品类].copy()
+else:
+    品类 = 模式
+    df = niche_data[品类].copy()
+
+# ⚖️ 加权评分
 st.sidebar.subheader("⚖️ 权重调整")
 w_搜索量 = st.sidebar.slider("搜索量权重", 0.0, 1.0, 0.4, 0.05)
 w_价格 = st.sidebar.slider("价格权重", 0.0, 1.0, 0.3, 0.05)
@@ -66,7 +103,7 @@ filtered = df[(df['综合得分'] >= min_score) & (df['平均价格'] <= max_pri
 # 板块1
 st.header("① 📊 数据概览")
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("📦 数据源", f"{品类} NicheSearch")
+col1.metric("📦 数据源", 品类)
 col2.metric("📋 利基数", len(df))
 col3.metric("💰 均价范围", f"${df['平均价格'].min():.0f} ~ ${df['平均价格'].max():.0f}")
 col4.metric("📈 搜索量范围", f"{df['搜索量'].min()//10000}万 ~ {df['搜索量'].max()//10000}万")
@@ -80,8 +117,7 @@ if len(top3) > 0:
     cols = st.columns(3)
     for i, (_, row) in enumerate(top3.iterrows()):
         with cols[i]:
-            st.metric(f"#{i+1} {row['利基'][:12]}",
-                      f"{row['综合得分']:.1f}分",
+            st.metric(f"#{i+1} {row['利基'][:15]}", f"{row['综合得分']:.1f}分",
                       f"搜索{row['搜索量']//10000}万 | ${row['平均价格']:.0f} | 退货{row['退货率']*100:.1f}%")
 
 col1, col2 = st.columns(2)
@@ -97,8 +133,7 @@ if len(filtered) > 0:
     st.subheader("📈 搜索量 vs 价格")
     fig, ax = plt.subplots(figsize=(10, 4))
     sizes = filtered['综合得分'] * 2
-    sc = ax.scatter(filtered['搜索量'], filtered['平均价格'], s=sizes,
-                    c=filtered['综合得分'], cmap='viridis', alpha=0.7)
+    sc = ax.scatter(filtered['搜索量'], filtered['平均价格'], s=sizes, c=filtered['综合得分'], cmap='viridis', alpha=0.7)
     for _, row in filtered.head(10).iterrows():
         ax.annotate(row['利基'], (row['搜索量'], row['平均价格']), fontsize=7)
     ax.set_xlabel('搜索量'); ax.set_ylabel('平均价格 ($)')
@@ -108,7 +143,7 @@ if len(filtered) > 0:
 
 # 板块3
 st.header("③ 🔄 交叉验证")
-品类关键词 = 品类.replace('收纳', '').strip()
+品类关键词 = 品类.replace('收纳', '').replace('📤 ', '').strip()[:4]
 匹配 = rec_data[rec_data['子品类'].str.contains(品类关键词, na=False, case=False)]
 col1, col2 = st.columns(2)
 with col1:
@@ -119,18 +154,16 @@ with col2:
     if len(匹配) > 0:
         st.dataframe(匹配[['ASIN', '子品类', '英国站搜索量', '美国站评分', '美国站售价']].head(5), width=450)
     else:
-        st.info(f"{品类关键词}暂无匹配的ASIN推荐")
+        st.info("暂无匹配的ASIN推荐")
 if len(匹配) > 0 and len(top3) > 0:
-    st.success(f"✅ **验证通过：** {品类}品类在品类级和ASIN级都有数据支撑")
+    st.success("✅ **验证通过**")
 
 # 板块4
 st.header("④ 🧠 选品核心逻辑")
 col1, col2, col3 = st.columns(3)
-with col1: st.info(f"**🔍 搜索量权重：{w_搜索量:.0%}**")
-with col2: st.info(f"**💰 价格权重：{w_价格:.0%}**")
-with col3: st.info(f"**📉 退货率权重：{w_退货:.0%}**（反向）")
-with st.expander("📐 归一化公式"):
-    st.markdown("搜索量分 = log(搜索量+1) / log(最大搜索量+1) × 100（对数归一化，避免第一名吃掉所有分）")
+with col1: st.info(f"**🔍 搜索量权重：{w_搜索量:.0%}**\n搜索量越高→需求越大")
+with col2: st.info(f"**💰 价格权重：{w_价格:.0%}**\n价格越高→利润空间越大")
+with col3: st.info(f"**📉 退货率权重：{w_退货:.0%}**（反向）\n退货率越低越好")
 
 # 板块5
 st.header("⑤ 🗺️ 执行路线图")
@@ -152,26 +185,23 @@ if len(top3) > 0:
     st.divider()
     st.subheader("📋 下一步行动")
     steps = [f"**① 美国站测试：** 先在 {首选['利基']} 上架1-2款产品",
-             "**② 数据验证：** 上架后跟踪搜索量变化和实际转化",
+             "**② 数据验证：** 上架后跟踪搜索量变化",
              "**③ 评估是否去英国：** 用美转英数据确认英国站搜索量",
-             "**④ 持续迭代：** 每周拉新数据，调整权重和评分模型"]
-    if r2 is not None:
-        steps.append(f"**⑤ 扩展：** {首选['利基']}稳定后，考虑 {r2['利基']} 作为第二方向")
+             "**④ 持续迭代：** 每周拉新数据，调整权重"]
+    if r2 is not None: steps.append(f"**⑤ 扩展：** 稳定后考虑 {r2['利基']}")
     for s in steps: st.markdown(s)
 
 # 汇率
 st.divider()
 st.subheader("🌐 今日汇率（美→英）")
 try:
-    r = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10,
-                     proxies={"http": "", "https": ""})
+    r = requests.get("https://api.exchangerate-api.com/v4/latest/USD", timeout=10, proxies={"http": "", "https": ""})
     data = r.json()
     gbp = data["rates"].get("GBP", "?")
     col1, col2 = st.columns(2)
     col1.metric("💵 USD → GBP", f"1 USD = {gbp} GBP")
     col2.metric("📅 日期", data.get("date", "今天"))
-except:
-    st.info("汇率加载失败")
+except: st.info("汇率加载失败")
 
 # Dify
 st.divider()
@@ -179,27 +209,17 @@ st.subheader("🤖 AI 补充分析")
 if st.button("🚀 获取AI建议"):
     with st.spinner("..."):
         try:
-            top3_text = "\n".join([
-                f"- {row['利基']}：搜索量{row['搜索量']:,}，${row['平均价格']:.0f}，退货{row['退货率']*100:.1f}%，得分{row['综合得分']:.1f}"
-                for _, row in top3.iterrows()
-            ])
-            resp = requests.post(
-                "https://api.dify.ai/v1/workflows/run",
-                headers={"Authorization": "Bearer app-M8tVPeleI3cSyIYwum1iuQQZ",
-                         "Content-Type": "application/json"},
-                json={"inputs": {"品类": 品类, "TOP3": top3_text},
-                      "response_mode": "blocking", "user": "选品助手"},
-                timeout=60, proxies={"http": "", "https": ""}
-            )
+            top3_text = "\n".join([f"- {row['利基']}：搜索量{row['搜索量']:,}，${row['平均价格']:.0f}，退货{row['退货率']*100:.1f}%，得分{row['综合得分']:.1f}" for _, row in top3.iterrows()])
+            resp = requests.post("https://api.dify.ai/v1/workflows/run",
+                headers={"Authorization": "Bearer app-M8tVPeleI3cSyIYwum1iuQQZ", "Content-Type": "application/json"},
+                json={"inputs": {"品类": 品类, "TOP3": top3_text}, "response_mode": "blocking", "user": "选品助手"},
+                timeout=60, proxies={"http": "", "https": ""})
             result = resp.json()
             if resp.status_code == 200:
                 outputs = result.get("data", {}).get("outputs", {})
                 if outputs:
                     st.success("✅ Dify 分析完成")
                     for k, v in outputs.items(): st.markdown(f"**{k}**：{v}")
-                else:
-                    st.warning("✅ 调用成功，但 outputs 为空")
-            else:
-                st.error(f"❌ 失败：{result}")
-        except Exception as e:
-            st.error(f"❌ 请求出错：{str(e)}")
+                else: st.warning("✅ 调用成功，但 outputs 为空")
+            else: st.error(f"❌ 失败：{result}")
+        except Exception as e: st.error(f"❌ 请求出错：{str(e)}")
