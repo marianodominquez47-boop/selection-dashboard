@@ -54,19 +54,38 @@ if 模式 == '📤 上传新品类CSV':
     上传文件 = st.sidebar.file_uploader("选择 CSV 文件", type='csv')
     if 上传文件 is not None:
         try:
-            df = pd.read_csv(上传文件, header=1)
+            # 自动检测表头行
+            raw = pd.read_csv(上传文件, header=None, nrows=5)
+            真实列名 = None
+            for i in range(min(5, len(raw))):
+                row = raw.iloc[i].tolist()
+                row_str = [str(c) for c in row if pd.notna(c)]
+                tag = ' '.join(row_str)
+                if '客戶' in tag or '搜尋量' in tag or '平均價格' in tag or '退貨率' in tag:
+                    真实列名 = row
+                    break
+            
+            if 真实列名:
+                df = pd.read_csv(上传文件, header=None, skiprows=i+1)
+                df.columns = 真实列名[:len(df.columns)]
+            else:
+                df = pd.read_csv(上传文件, header=1)
+            
+            # 列名自动映射
             列映射 = {}
             for col in df.columns:
-                if '客戶' in col or '需求' in col or '利基' in col:
+                col_str = str(col)
+                if '客戶' in col_str or '需求' in col_str or '利基' in col_str or 'niche' in col_str.lower() or 'search' in col_str.lower():
                     列映射[col] = '利基'
-                elif '搜尋' in col or '搜索' in col:
+                elif '搜尋量' in col_str or '搜索量' in col_str or 'search_volume' in col_str.lower():
                     列映射[col] = '搜索量'
-                elif '價格' in col or '价格' in col:
+                elif '平均價格' in col_str or '平均价格' in col_str or '價格' in col_str or '价格' in col_str or 'price' in col_str.lower():
                     列映射[col] = '平均价格'
-                elif '退貨' in col or '退货' in col:
+                elif '退貨率' in col_str or '退货率' in col_str or 'return' in col_str.lower():
                     列映射[col] = '退货率'
+            
             df = df.rename(columns=列映射)
-            df = df[['利基', '搜索量', '平均价格', '退货率']]
+            df = df[[c for c in ['利基', '搜索量', '平均价格', '退货率'] if c in df.columns]]
             df['搜索量'] = pd.to_numeric(df['搜索量'], errors='coerce')
             df['平均价格'] = pd.to_numeric(df['平均价格'], errors='coerce')
             df['退货率'] = pd.to_numeric(df['退货率'], errors='coerce')
