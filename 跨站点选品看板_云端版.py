@@ -80,6 +80,9 @@ if 模式 == '📤 上传新品类CSV':
 if 上传的数据:
     品类 = 品类名
     df = 上传的数据[品类].copy()
+elif 模式 == '📤 上传新品类CSV':
+    st.info("👈 请在左侧边栏上传一个 NicheSearch CSV 文件")
+    st.stop()
 else:
     品类 = 模式
     df = niche_data[品类].copy()
@@ -133,7 +136,8 @@ if len(filtered) > 0:
     st.subheader("📈 搜索量 vs 价格")
     fig, ax = plt.subplots(figsize=(10, 4))
     sizes = filtered['综合得分'] * 2
-    sc = ax.scatter(filtered['搜索量'], filtered['平均价格'], s=sizes, c=filtered['综合得分'], cmap='viridis', alpha=0.7)
+    sc = ax.scatter(filtered['搜索量'], filtered['平均价格'], s=sizes,
+                    c=filtered['综合得分'], cmap='viridis', alpha=0.7)
     for _, row in filtered.head(10).iterrows():
         ax.annotate(row['利基'], (row['搜索量'], row['平均价格']), fontsize=7)
     ax.set_xlabel('搜索量'); ax.set_ylabel('平均价格 ($)')
