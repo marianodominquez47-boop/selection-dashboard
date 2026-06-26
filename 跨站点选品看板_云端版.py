@@ -54,30 +54,30 @@ if 模式 == '📤 上传新品类CSV':
     上传文件 = st.sidebar.file_uploader("选择 CSV 文件", type='csv')
     if 上传文件 is not None:
         try:
-            # 自动检测表头行
-            raw = pd.read_csv(上传文件, header=None, nrows=5)
-            真实列名 = None
-            for i in range(min(5, len(raw))):
-                row = raw.iloc[i].tolist()
-                row_str = [str(c) for c in row if pd.notna(c)]
-                tag = ' '.join(row_str)
-                if '客戶' in tag or '搜尋量' in tag or '平均價格' in tag or '退貨率' in tag:
-                    真实列名 = row
+            # 读为文本，逐行找表头
+            raw_text = 上传文件.getvalue().decode('utf-8-sig')
+            lines = raw_text.strip().split('\n')
+            
+            表头行号 = None
+            for idx, line in enumerate(lines):
+                if '客戶需求' in line or '搜尋量' in line or '平均價格' in line or '退貨率' in line:
+                    表头行号 = idx
                     break
             
-            if 真实列名:
-                df = pd.read_csv(上传文件, header=None, skiprows=i+1)
-                df.columns = 真实列名[:len(df.columns)]
+            if 表头行号 is not None:
+                上传文件.seek(0)
+                df = pd.read_csv(上传文件, header=表头行号, encoding='utf-8-sig', engine='python')
             else:
-                df = pd.read_csv(上传文件, header=1)
+                上传文件.seek(0)
+                df = pd.read_csv(上传文件, header=1, encoding='utf-8-sig', engine='python')
             
             # 列名自动映射
             列映射 = {}
             for col in df.columns:
                 col_str = str(col)
-                if '客戶' in col_str or '需求' in col_str or '利基' in col_str or 'niche' in col_str.lower() or 'search' in col_str.lower():
+                if '客戶' in col_str or '需求' in col_str or '利基' in col_str or 'niche' in col_str.lower():
                     列映射[col] = '利基'
-                elif '搜尋量' in col_str or '搜索量' in col_str or 'search_volume' in col_str.lower():
+                elif '搜尋量' in col_str or '搜索量' in col_str:
                     列映射[col] = '搜索量'
                 elif '平均價格' in col_str or '平均价格' in col_str or '價格' in col_str or '价格' in col_str or 'price' in col_str.lower():
                     列映射[col] = '平均价格'
