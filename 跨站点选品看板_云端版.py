@@ -247,8 +247,8 @@ if st.button("🚀 获取AI建议"):
         try:
             top3_text = "\n".join([f"- {row['利基']}：搜索量{row['搜索量']:,}，${row['平均价格']:.0f}，退货{row['退货率']*100:.1f}%，得分{row['综合得分']:.1f}" for _, row in top3.iterrows()])
             resp = requests.post("https://api.dify.ai/v1/workflows/run",
-                headers={"Authorization": "Bearer app-M8tVPeleI3cSyIYwum1iuQQZ", "Content-Type": "application/json"},
-                json={"inputs": {"品类": 品类, "TOP3": top3_text}, "response_mode": "blocking", "user": "选品助手"},
+                headers={"Authorization": "Bearer app-HMoMQ5y3QNWNiJ3pgWYegWwP", "Content-Type": "application/json"},
+                json={"inputs": {"category": 品类, "top3_data": top3_text}, "response_mode": "blocking", "user": "选品助手"},
                 timeout=60, proxies={"http": "", "https": ""})
             result = resp.json()
             if resp.status_code == 200:
