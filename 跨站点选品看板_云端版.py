@@ -5,6 +5,7 @@ import requests
 import json
 import numpy as np
 import os
+import io
 
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei']
 plt.rcParams['axes.unicode_minus'] = False
@@ -13,6 +14,12 @@ st.set_page_config(page_title="跨站点选品看板", layout="wide")
 st.title("🎯 跨站点选品看板")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ===== 品类→英文关键词 映射（交叉验证用）=====
+品类关键词映射 = {
+    '厨房收纳': ['Kitchen', 'Baking', 'Cookware', 'Food', 'Cooking', 'Bread'],
+    '浴室收纳': ['Bath', 'Bathroom', 'Shower', 'Body', 'Soap', 'Toilet', 'Bath & Body'],
+}
 
 @st.cache_data
 def load_niche_data():
@@ -61,11 +68,10 @@ if 模式 == '📤 上传新品类CSV':
                     表头行号 = idx
                     break
             if 表头行号 is not None:
-                上传文件.seek(0)
-                df = pd.read_csv(上传文件, header=表头行号, encoding='utf-8-sig', engine='python')
+                import io as _io
+                df = pd.read_csv(_io.StringIO(raw_text), header=表头行号, engine='python')
             else:
-                上传文件.seek(0)
-                df = pd.read_csv(上传文件, header=1, encoding='utf-8-sig', engine='python')
+                df = pd.read_csv(_io.StringIO(raw_text), header=1, engine='python')
             
             列映射 = {}
             for col in df.columns:
@@ -93,6 +99,14 @@ if 模式 == '📤 上传新品类CSV':
             上传的数据 = {'📤 ' + 上传文件.name.replace('.csv', ''): df}
             品类名 = '📤 ' + 上传文件.name.replace('.csv', '')
             st.sidebar.success(f"✅ 已加载 {len(df)} 条数据")
+
+            # 上传的品类自动提取英文关键词（用于交叉验证）
+            上传关键词 = []
+            for n in df['利基'].head(3).tolist():
+                words = str(n).replace('_', ' ').replace('-', ' ').split()
+                上传关键词.extend([w for w in words if len(w) > 2])
+            上传关键词 = list(set(上传关键词))[:5]
+            品类关键词映射['📤 ' + 上传文件.name.replace('.csv', '')] = 上传关键词 if 上传关键词 else [品类名.replace('📤 ', '')]
         except Exception as e:
             st.sidebar.error(f"❌ 读取失败：{e}")
 
@@ -161,19 +175,30 @@ if len(filtered) > 0:
     st.pyplot(fig)
 
 st.header("③ 🔄 交叉验证")
-品类关键词 = 品类.replace('收纳', '').replace('📤 ', '').strip()[:4]
-匹配 = rec_data[rec_data['子品类'].str.contains(品类关键词, na=False, case=False)]
+
+# 获取该品类的英文关键词进行匹配
+关键词列表 = 品类关键词映射.get(品类, [品类.replace('收纳', '').replace('📤 ', '').strip()])
+
+# 用多个关键词匹配，任一匹配就算
+匹配_mask = pd.Series([False] * len(rec_data))
+for kw in 关键词列表:
+    if len(kw) > 1:
+        匹配_mask |= rec_data['子品类'].str.contains(kw, na=False, case=False)
+匹配 = rec_data[匹配_mask]
+
 col1, col2 = st.columns(2)
 with col1:
-    st.subheader("🏪 数据源A：NicheSearch")
+    st.subheader("🏪 数据源A：NicheSearch（美国站）")
     st.dataframe(top3[['利基', '搜索量', '平均价格', '综合得分']], width=450)
 with col2:
     st.subheader("📦 数据源B：美转英推荐")
     if len(匹配) > 0:
         st.dataframe(匹配[['ASIN', '子品类', '英国站搜索量', '美国站评分', '美国站售价']].head(5), width=450)
+        st.caption(f"匹配关键词：{' / '.join(关键词列表)}")
     else:
-        st.info("暂无匹配的ASIN推荐")
-if len(匹配) > 0 and len(top3) > 0: st.success("✅ **验证通过**")
+        st.info("暂无匹配的ASIN推荐（子品类名称为英文，可以手动调整关键词）")
+if len(匹配) > 0 and len(top3) > 0:
+    st.success("✅ **验证通过** — 美国站利基和美转英推荐有重叠品类")
 
 st.header("④ 🧠 选品核心逻辑")
 col1, col2, col3 = st.columns(3)
