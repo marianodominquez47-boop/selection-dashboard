@@ -180,7 +180,7 @@ st.header("③ 🔄 交叉验证")
 关键词列表 = 品类关键词映射.get(品类, [品类.replace('收纳', '').replace('📤 ', '').strip()])
 
 # 用多个关键词匹配，任一匹配就算
-匹配_mask = pd.Series([False] * len(rec_data))
+匹配_mask = pd.Series([False] * len(rec_data), index=rec_data.index)
 for kw in 关键词列表:
     if len(kw) > 1:
         匹配_mask |= rec_data['子品类'].str.contains(kw, na=False, case=False)
