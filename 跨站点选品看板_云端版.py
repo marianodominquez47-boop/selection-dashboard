@@ -382,7 +382,7 @@ with tab2:
 with tab3:
     st.header("🎨 AI 产品图生成（通义万相）")
     
-    tab_mode = st.radio("生成模式", ["🖼️ 单张场景图", "📸 全套7张亚马逊标准图"], horizontal=True)
+    tab_mode = st.radio("生成模式", ["🖼️ 单张场景图", "📸 全套7张亚马逊标准图", "📷 参考竞品图生成"], horizontal=True)
     
     if tab_mode == "🖼️ 单张场景图":
         st.markdown("输入产品描述，AI 自动生成亚马逊风格的产品场景图")
@@ -435,7 +435,7 @@ with tab3:
                     except Exception as e:
                         st.error(f"❌ 请求出错：{str(e)}")
     
-    else:  # 全套7张
+    elif tab_mode == "📸 全套7张亚马逊标准图":
         st.markdown("""
         #### 📋 亚马逊标准图片要求
         | # | 图片类型 | 要求 |
@@ -511,3 +511,84 @@ with tab3:
                 
                 状态文字.success("✅ 全套7张图生成完成！右键每张图片可另存为")
                 进度条.empty()
+
+
+    # ===== 以图生图：参考竞品图生成 =====
+    elif tab_mode == "📷 参考竞品图生成":
+        st.markdown("""
+        #### 🎯 捕获模式：参考竞品图 → 生成你的产品图
+        适合做**捕获模式**：先跟卖竞品风格，等规模上来后再转精品。
+        """)
+        
+        with st.form("image_ref_form"):
+            参考图URL = st.text_input("🔗 竞品图片URL",
+                               placeholder="从亚马逊/竞品页面复制图片链接",
+                               help="右键竞品图片 → 复制图片链接/复制图片地址")
+            
+            st.markdown("**或者上传参考图：**")
+            上传图 = st.file_uploader("上传本地参考图（自动转为链接）", type=['jpg', 'jpeg', 'png', 'webp'],
+                              help="上传一张竞品图作为风格参考")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                你的产品 = st.text_input("📦 你的产品名", placeholder="例如：ClawCrew猫抓板")
+            with col2:
+                目标场景 = st.selectbox("🏠 目标场景", ["客厅", "卧室", "厨房", "户外", "浴室", "白底纯色"])
+            
+            修改指令 = st.text_area("✏️ 你想怎么改？",
+                              placeholder="例如：把产品换成我的ClawCrew猫抓板，风格和构图跟参考图一致，颜色暖色调",
+                              height=80)
+            
+            submitted_ref = st.form_submit_button("🚀 以图生图", use_container_width=True)
+        
+        if submitted_ref:
+            if not (参考图URL or 上传图) or not 你的产品.strip():
+                st.warning("⚠️ 请提供参考图（URL或上传）和你的产品名")
+            else:
+                # 处理图片
+                场景英 = {"客厅": "living room", "卧室": "bedroom", "厨房": "kitchen",
+                          "户外": "outdoor", "浴室": "bathroom", "白底纯色": "white background"}
+                
+                if not 修改指令.strip():
+                    修改指令 = f"保持参考图的构图和风格，把产品换成{你的产品}"
+                
+                prompt = f"参考图的风格和构图，{修改指令}，放在{目标场景}中，{场景英[目标场景]}，自然光线，亚马逊产品摄影风格，电商主图质量，高清"
+                
+                with st.spinner("🖌️ 正在基于参考图生成..."):
+                    try:
+                        # 构建content
+                        content = [{"text": prompt}]
+                        
+                        if 参考图URL and 参考图URL.strip():
+                            content.append({"image": 参考图URL.strip()})
+                        elif 上传图:
+                            # 转为base64内嵌
+                            import base64
+                            img_bytes = 上传图.getvalue()
+                            img_b64 = base64.b64encode(img_bytes).decode('utf-8')
+                            ext = 上传图.name.split('.')[-1].lower()
+                            mime = {"png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "webp": "image/webp"}
+                            data_uri = f"data:{mime.get(ext, 'image/png')};base64,{img_b64}"
+                            content.append({"image": data_uri})
+                        
+                        resp = requests.post(BAILIAN_HOST,
+                            headers={"Content-Type": "application/json", "Authorization": f"Bearer {BAILIAN_KEY}"},
+                            json={"model": "wan2.6-image", "input": {"messages": [{"role": "user", "content": content}]},
+                                  "parameters": {"prompt_extend": True, "watermark": False, "n": 1, "size": "1024*1024"}},
+                            timeout=120, proxies={"http": "", "https": ""})
+                        
+                        result = resp.json()
+                        if resp.status_code == 200:
+                            img_url = result["output"]["choices"][0]["message"]["content"][0]["image"]
+                            st.image(img_url, caption=f"🎨 基于参考图生成的 {你的产品}", width=600)
+                            st.success("✅ 生成成功！右键图片可另存为")
+                            
+                            # 显示参考图
+                            with st.expander("📷 查看参考图"):
+                                if 参考图URL:
+                                    st.image(参考图URL, caption="参考图", width=300)
+                                st.info(f"生成了{你的产品}在{目标场景}中的场景图，风格参考了竞品图")
+                        else:
+                            st.error(f"❌ 生成失败：{result}")
+                    except Exception as e:
+                        st.error(f"❌ 请求出错：{str(e)}")
