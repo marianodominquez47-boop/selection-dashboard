@@ -10,8 +10,8 @@ import io
 plt.rcParams['font.sans-serif'] = ['Microsoft YaHei', 'SimHei']
 plt.rcParams['axes.unicode_minus'] = False
 
-st.set_page_config(page_title="亚马逊卖家AI工具箱", layout="wide")
-st.title("🎯 亚马逊卖家AI工具箱")
+st.set_page_config(page_title="跨境卖家AI工具箱", layout="wide")
+st.title("🎯 跨境卖家AI工具箱")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -63,6 +63,7 @@ rec_data = load_rec_data()
 
 # ===== 🎯 品类选择 =====
 st.sidebar.header("🔧 设置")
+平台 = st.sidebar.radio("🌍 目标平台", ["亚马逊美国站 🇺🇸", "亚马逊法国站 🇫🇷", "Cdiscount法国站 🇫🇷"], horizontal=True)
 选项列表 = list(niche_data.keys()) + ['📤 上传新品类CSV']
 模式 = st.sidebar.selectbox("选择品类", 选项列表)
 
@@ -160,13 +161,21 @@ top3 = filtered.head(3)
 # ====================================================================
 #  Tab 分页：选品分析 + Listing写作 + 以图生图（预留）
 # ====================================================================
-tab_names = ["🎯 选品分析", "✍️ Listing写作", "🎨 以图生图（预留）"]
+tab_names = ["🎯 选品分析", "✍️ Listing写作", "🎨 以图生图"]
 tab1, tab2, tab3 = st.tabs(tab_names)
 
 # ====================================================================
 #  TAB 1：选品分析（原有全部内容）
 # ====================================================================
 with tab1:
+    # 平台上下文提示
+    平台提示 = {
+        "亚马逊美国站 🇺🇸": "🇺🇸 **当前平台：亚马逊美国站** — 数据来源NicheSearch，货币USD，语言English",
+        "亚马逊法国站 🇫🇷": "🇫🇷 **当前平台：亚马逊法国站** — 数据可参考美国站利基（需换算EUR），语言Français",
+        "Cdiscount法国站 🇫🇷": "🇫🇷 **当前平台：Cdiscount法国站** — 法国本土电商，数据需结合Cdiscount选品工具，语言Français"
+    }
+    st.info(平台提示[平台])
+    
     # ===== 板块1：数据概览 =====
     st.header("① 📊 数据概览")
     col1, col2, col3, col4 = st.columns(4)
@@ -322,8 +331,24 @@ with tab1:
 #  TAB 2：Listing 写作
 # ====================================================================
 with tab2:
-    st.header("✍️ 亚马逊 Listing 写作助手")
-    st.markdown("输入产品信息，AI 自动生成亚马逊 Listing（标题、五点描述、产品描述、关键词）")
+    # 根据平台显示不同标题
+    平台标题 = {
+        "亚马逊美国站 🇺🇸": "✍️ 亚马逊美国站 Listing 写作助手",
+        "亚马逊法国站 🇫🇷": "✍️ 亚马逊法国站 Listing 写作助手（法语）",
+        "Cdiscount法国站 🇫🇷": "✍️ Cdiscount 法国站 Listing 写作助手"
+    }
+    st.header(平台标题[平台])
+    
+    平台描述 = {
+        "亚马逊美国站 🇺🇸": "输入产品信息，AI 自动生成亚马逊美国站 Listing（英文标题+五点描述+产品描述+关键词）",
+        "亚马逊法国站 🇫🇷": "输入产品信息，AI 自动生成亚马逊法国站 Listing（法语标题+五点描述+产品描述+关键词）",
+        "Cdiscount法国站 🇫🇷": "输入产品信息，AI 自动生成 Cdiscount 产品页（法语标题+描述+技术参数+关键词）"
+    }
+    st.markdown(平台描述[平台])
+    
+    # Cdiscount 平台提示
+    if "Cdiscount" in 平台:
+        st.info("💡 Cdiscount 要求：法语完整描述、技术参数表(Caractéristiques)、品牌名、EAN码可选")
 
     with st.form("listing_form"):
         col1, col2 = st.columns(2)
@@ -340,15 +365,23 @@ with tab2:
         if not 产品名.strip() or not 卖点.strip():
             st.warning("⚠️ 请填写产品名和产品卖点")
         else:
-            with st.spinner("🤖 Dify 正在生成 Listing..."):
+            with st.spinner("🤖 Dify 正在生成..."):
                 try:
+                    # 根据平台在卖点中注入格式指令
+                    平台指令 = {
+                        "亚马逊美国站 🇺🇸": "\n\n[要求] 用英文生成亚马逊美国站Listing，含标题、五点描述、产品描述、搜索关键词",
+                        "亚马逊法国站 🇫🇷": "\n\n[要求] 用法语生成亚马逊法国站Listing，含标题( Titre)、五点描述(Points forts)、产品描述(Description)、关键词(Mots-clés)",
+                        "Cdiscount法国站 🇫🇷": "\n\n[要求] 用法语生成Cdiscount产品页，格式如下：\n1. 【Titre】- 100字符以内\n2. 【Description】- 完整产品描述\n3. 【Caractéristiques】- 技术参数表\n4. 【Mots-clés】- 5个关键词"
+                    }
+                    增强卖点 = 卖点 + 平台指令[平台]
+                    
                     resp = requests.post(DIFY_BASE,
                         headers={"Authorization": f"Bearer {DIFY_Listing_KEY}", "Content-Type": "application/json"},
                         json={
                             "inputs": {
                                 "category": 品类输入,
                                 "product_name": 产品名,
-                                "features": 卖点
+                                "features": 增强卖点
                             },
                             "response_mode": "blocking",
                             "user": "选品助手"
@@ -362,13 +395,13 @@ with tab2:
                         if outputs:
                             listing_text = outputs.get("result", "")
                             if listing_text:
-                                st.success("✅ Listing 生成成功！")
+                                st.success(f"✅ {平台} Listing 生成成功！")
                                 st.markdown(listing_text)
                             else:
-                                st.warning("✅ 调用成功但未返回内容，请检查Dify工作流的输出节点配置")
+                                st.warning("✅ 调用成功但未返回内容")
                                 st.json(outputs)
                         else:
-                            st.warning("⚠️ Dify 返回的 outputs 为空，可能是工作流输出节点未配置")
+                            st.warning("⚠️ Dify 返回的 outputs 为空")
                             st.json(result.get("data", {}))
                     else:
                         st.error(f"❌ Dify API 返回错误：{result}")
@@ -380,7 +413,19 @@ with tab2:
 #  TAB 3：以图生图（通义万相 API）
 # ====================================================================
 with tab3:
-    st.header("🎨 AI 产品图生成（通义万相）")
+    平台图标题 = {
+        "亚马逊美国站 🇺🇸": "🎨 AI 产品图生成 — 亚马逊美国站标准 🇺🇸",
+        "亚马逊法国站 🇫🇷": "🎨 AI 产品图生成 — 亚马逊法国站标准 🇫🇷",
+        "Cdiscount法国站 🇫🇷": "🎨 AI 产品图生成 — Cdiscount法国站标准 🇫🇷"
+    }
+    st.header(平台图标题[平台])
+    
+    平台图说明 = {
+        "亚马逊美国站 🇺🇸": "亚马逊图片要求：主图白底85%+产品占比，至少1000x1000，7张标准图",
+        "亚马逊法国站 🇫🇷": "亚马逊法国站图片要求：与亚马逊美国站一致，主图白底1000x1000以上",
+        "Cdiscount法国站 🇫🇷": "Cdiscount图片要求：至少800x800，建议1000x1000，主图白底，最多10张图"
+    }
+    st.info(平台图说明[平台])
     
     tab_mode = st.radio("生成模式", ["🖼️ 单张场景图", "📸 全套7张亚马逊标准图", "📷 参考竞品图生成"], horizontal=True)
     
@@ -436,8 +481,14 @@ with tab3:
                         st.error(f"❌ 请求出错：{str(e)}")
     
     elif tab_mode == "📸 全套7张亚马逊标准图":
-        st.markdown("""
-        #### 📋 亚马逊标准图片要求
+        平台图要求 = {
+            "亚马逊美国站 🇺🇸": "亚马逊",
+            "亚马逊法国站 🇫🇷": "亚马逊",
+            "Cdiscount法国站 🇫🇷": "Cdiscount"
+        }
+        图平台名 = 平台图要求[平台]
+        st.markdown(f"""
+        #### 📋 {图平台名}标准图片要求
         | # | 图片类型 | 要求 |
         |:-:|:--------|:-----|
         | 1 | **主图** 🟢 | 白底纯色，产品占85%以上，无文字、无Logo、无水印 |
