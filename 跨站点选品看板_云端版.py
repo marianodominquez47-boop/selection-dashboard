@@ -20,7 +20,11 @@ DIFY_BASE = "https://api.dify.ai/v1/workflows/run"
 DIFY_HEADERS = {"Content-Type": "application/json"}
 
 DIFY_选品分析_KEY = "app-M8tVPeleI3cSyIYwum1iuQQZ"
-DIFY_Listing_KEY = "app-HMoMQ5y3QNWNiJ3pgWYegWwP"
+DIFY_Listing_KEY = "app-b4XoJl1VD5WRncIMMbg2DCvT"
+
+# ===== 通义万相 API 配置 =====
+BAILIAN_KEY = "sk-ws-H.RXRMXIH.GSAm.MEUCIBMygsU2CMp_WrFUmavnR_e4y79_2Z-2rTaeFy0M5SUFAiEAybVVHlhD_FMvjwXOIOT7YzaDVENgtC-IcaSWnTwAZNw"
+BAILIAN_HOST = "https://ws-mowi5ku4xbnp491l.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
 
 # ===== 品类→英文关键词 映射（用于交叉验证）=====
 品类关键词映射 = {
@@ -33,14 +37,14 @@ def load_niche_data():
     厨房 = pd.read_csv(os.path.join(BASE_DIR, '厨房收纳NicheSearchResults_2026_6_24.csv'), header=1)
     厨房 = 厨房.rename(columns={'客戶需求': '利基', '搜尋量 (過去 360 天)': '搜索量',
                               '平均價格 (USD)': '平均价格', '退貨率 (過去 360 天)': '退货率'})
-    浴室 = pd.read_csv(os.path.join(BASE_DIR, '浴室收纳NicheSearch.csv'), header=1)
+    浴室 = pd.read_csv(os.path.join(BASE_DIR, '4NicheSearchResults_2026_6_26.csv'), header=1)
     浴室 = 浴室.rename(columns={'客戶需求': '利基', '搜尋量 (過去 360 天)': '搜索量',
                               '平均價格 (USD)': '平均价格', '退貨率 (過去 360 天)': '退货率'})
     return {'厨房收纳': 厨房, '浴室收纳': 浴室}
 
 @st.cache_data
 def load_rec_data():
-    xls = pd.ExcelFile(os.path.join(BASE_DIR, '3List_of_recommendations_from_United_States_to_United_Kingdom__1_.xlsx'))
+    xls = pd.ExcelFile(os.path.join(BASE_DIR, '4List_of_recommendations_from_United States_to_United Kingdom (1).xlsx'))
     df = pd.read_excel(xls, 'Recommendations', header=None, skiprows=4)
     cols = ['源站点', '目标站点', 'ASIN', '产品名', '子品类', '推荐原因',
             '90天销售预测$(上限)', '90天销售预测$(下限)', '90天销量(上限)', '90天销量(下限)',
@@ -208,11 +212,11 @@ with tab1:
     # ===== 板块3：交叉验证 =====
     st.header("③ 🔄 交叉验证")
     关键词列表 = 品类关键词映射.get(品类, [品类.replace('收纳', '').replace('📤 ', '').strip()])
-    匹配_mask = pd.Series([False] * len(rec_data))
+    所有匹配 = pd.Series(False, index=rec_data.index)
     for kw in 关键词列表:
         if len(kw) > 1:
-            匹配_mask |= rec_data['子品类'].str.contains(kw, na=False, case=False)
-    匹配 = rec_data[匹配_mask]
+            所有匹配 |= rec_data['子品类'].str.contains(kw, na=False, case=False)
+    匹配 = rec_data[所有匹配]
 
     col1, col2 = st.columns(2)
     with col1:
@@ -322,7 +326,11 @@ with tab2:
     st.markdown("输入产品信息，AI 自动生成亚马逊 Listing（标题、五点描述、产品描述、关键词）")
 
     with st.form("listing_form"):
-        产品名 = st.text_input("📦 产品名", placeholder="例如：Bathroom Storage Shelves")
+        col1, col2 = st.columns(2)
+        with col1:
+            品类输入 = st.selectbox("🏷️ 品类", ["宠物用品", "厨房收纳", "浴室收纳", "家居用品", "户外运动", "电子产品", "其他"])
+        with col2:
+            产品名 = st.text_input("📦 产品名", placeholder="例如：Bathroom Storage Shelves")
         卖点 = st.text_area("💡 产品卖点/描述",
                              placeholder="例如：\n- Rust-proof aluminum, no rust after 5 years\n- Easy to install in 5 minutes\n- Can hold up to 50 lbs\n- Size: 12x8x24 inches",
                              height=200)
@@ -338,6 +346,7 @@ with tab2:
                         headers={"Authorization": f"Bearer {DIFY_Listing_KEY}", "Content-Type": "application/json"},
                         json={
                             "inputs": {
+                                "category": 品类输入,
                                 "product_name": 产品名,
                                 "features": 卖点
                             },
@@ -368,16 +377,137 @@ with tab2:
 
 
 # ====================================================================
-#  TAB 3：以图生图（预留）
+#  TAB 3：以图生图（通义万相 API）
 # ====================================================================
 with tab3:
-    st.header("🎨 以图生图（规划中）")
-    st.info("""
-    **功能规划中，后续会加上：**
+    st.header("🎨 AI 产品图生成（通义万相）")
     
-    1. 📤 上传产品图片
-    2. 🔄 AI 生成不同场景图（白底图、场景图、A+ 配图）
-    3. 🎨 风格选择（现代、简约、手绘等）
+    tab_mode = st.radio("生成模式", ["🖼️ 单张场景图", "📸 全套7张亚马逊标准图"], horizontal=True)
     
-    工具方案待确认（Dify + ComfyUI / 通义万相 / 即梦AI）
-    """)
+    if tab_mode == "🖼️ 单张场景图":
+        st.markdown("输入产品描述，AI 自动生成亚马逊风格的产品场景图")
+        with st.form("image_gen_single"):
+            col1, col2 = st.columns(2)
+            with col1:
+                产品描述 = st.text_input("📦 产品名称", placeholder="例如：ClawCrew 猫抓板")
+            with col2:
+                场景 = st.selectbox("🏠 场景", ["客厅", "卧室", "厨房", "户外", "浴室", "白底纯色", "办公室"])
+            
+            风格 = st.radio("🎨 图片风格", ["真实感", "温馨家居", "简约现代", "高端质感"], horizontal=True)
+            
+            补充描述 = st.text_area("💡 补充描述（可选）", 
+                              placeholder="例如：一只橘猫在抓猫抓板，阳光从窗户洒进来",
+                              height=80)
+            
+            submitted = st.form_submit_button("🚀 生成图片", use_container_width=True)
+
+        if submitted:
+            if not 产品描述.strip():
+                st.warning("⚠️ 请填写产品名称")
+            else:
+                场景英文 = {"客厅": "living room", "卧室": "bedroom", "厨房": "kitchen", 
+                          "户外": "outdoor", "浴室": "bathroom", "白底纯色": "white background",
+                          "办公室": "office"}
+                风格英文 = {"真实感": "photorealistic", "温馨家居": "warm cozy home style",
+                          "简约现代": "minimalist modern", "高端质感": "premium luxury"}
+                
+                prompt = f"{产品描述}"
+                if 补充描述.strip():
+                    prompt += f"，{补充描述}"
+                prompt += f"，放在{场景}中，{风格英文[风格]}，自然光线，亚马逊产品摄影风格，电商主图质量，清晰度高，产品突出，构图专业"
+                
+                st.info(f"📝 提示词：{prompt[:200]}...")
+                
+                with st.spinner("🖌️ 正在生成..."):
+                    try:
+                        resp = requests.post(BAILIAN_HOST,
+                            headers={"Content-Type": "application/json", "Authorization": f"Bearer {BAILIAN_KEY}"},
+                            json={"model": "wan2.6-t2i", "input": {"messages": [{"role": "user", "content": [{"text": prompt}]}]},
+                                  "parameters": {"prompt_extend": True, "watermark": False, "n": 1, "size": "1024*1024"}},
+                            timeout=120, proxies={"http": "", "https": ""})
+                        result = resp.json()
+                        if resp.status_code == 200:
+                            img_url = result["output"]["choices"][0]["message"]["content"][0]["image"]
+                            st.image(img_url, caption=f"🎨 {产品描述} - {场景}场景", width=600)
+                            st.success("✅ 生成成功！右键图片可另存为")
+                        else:
+                            st.error(f"❌ 失败：{result}")
+                    except Exception as e:
+                        st.error(f"❌ 请求出错：{str(e)}")
+    
+    else:  # 全套7张
+        st.markdown("""
+        #### 📋 亚马逊标准图片要求
+        | # | 图片类型 | 要求 |
+        |:-:|:--------|:-----|
+        | 1 | **主图** 🟢 | 白底纯色，产品占85%以上，无文字、无Logo、无水印 |
+        | 2 | **副图-多角度** | 展示产品不同角度（45°/侧面/背面） |
+        | 3 | **细节/材质图** | 材质、工艺、功能特写 |
+        | 4 | **场景图-使用中** | 真实场景中展示产品如何使用 |
+        | 5 | **场景图-功能展示** | 展示核心功能/卖点的生活场景 |
+        | 6 | **尺寸/包装图** | 带尺寸标注或产品包装 |
+        | 7 | **款式/场景图** | 多色/多款式展示或另一角度场景 |
+        """)
+        
+        with st.form("image_gen_full"):
+            col1, col2 = st.columns(2)
+            with col1:
+                产品名全套 = st.text_input("📦 产品名称", placeholder="例如：ClawCrew 猫抓板")
+            with col2:
+                主材质 = st.text_input("🧵 主要材质", placeholder="例如：天然剑麻+瓦楞纸")
+            
+            col1, col2 = st.columns(2)
+            with col1:
+                核心卖点 = st.text_input("⭐ 核心卖点", placeholder="例如：耐抓不掉屑、可趴睡")
+            with col2:
+                主要场景 = st.selectbox("🏠 主场景", ["客厅", "卧室", "厨房", "户外", "浴室"])
+            
+            产品补充 = st.text_area("💡 补充描述", placeholder="例如：一只橘猫在玩耍，氛围温馨，自然光线", height=60)
+            
+            submitted_full = st.form_submit_button("🚀 一键生成全套7张图", use_container_width=True)
+        
+        if submitted_full:
+            if not 产品名全套.strip():
+                st.warning("⚠️ 请填写产品名称")
+            else:
+                场景英 = {"客厅": "living room", "卧室": "bedroom", "厨房": "kitchen", "户外": "outdoor", "浴室": "bathroom"}
+                场景 = 场景英[主要场景]
+                
+                # 7张图的标准提示词
+                prompts = [
+                    f"{产品名全套}，白底纯色背景，产品居中展示，产品占画面85%，电商主图，无文字无水印，高清摄影，{主材质}，专业产品摄影，光线均匀，无阴影",  # 主图
+                    f"{产品名全套}，45度角展示，白底，产品侧视图，展示产品厚度和造型，电商副图，高清，{主材质}纹理清晰可见",  # 副图-角度
+                    f"{产品名全套}，材质细节特写微距，展示{主材质}纹理和工艺细节，高清微距摄影，电商细节图，质感真实",  # 细节图
+                    f"{产品名全套}，放在{场景}中，{产品补充}，真实家居场景，自然光线，温暖色调，电商场景图，产品清晰突出",  # 场景-使用
+                    f"{产品名全套}，在{场景}中展示{核心卖点}，{产品补充}，真实场景，自然光，电商功能展示图，产品焦点清晰",  # 场景-功能
+                    f"{产品名全套}，带尺寸标注示意图，展示产品长宽高比例，包装展示，电商尺寸图，简洁直观，清晰标注",  # 尺寸图
+                    f"{产品名全套}，多款式/多颜色合集展示，排列整齐，{主要场景}场景，电商组合图，视觉统一，风格协调",  # 款式图
+                ]
+                
+                图片类型 = ["主图-白底", "副图-多角度", "细节-材质特写", "场景-使用中", "场景-功能展示", "尺寸/包装图", "款式/合集图"]
+                
+                进度条 = st.progress(0, text="正在生成图片...")
+                状态文字 = st.empty()
+                
+                for i, (prompt, 类型) in enumerate(zip(prompts, 图片类型)):
+                    状态文字.info(f"📸 正在生成第{i+1}张：{类型}")
+                    
+                    try:
+                        resp = requests.post(BAILIAN_HOST,
+                            headers={"Content-Type": "application/json", "Authorization": f"Bearer {BAILIAN_KEY}"},
+                            json={"model": "wan2.6-t2i", "input": {"messages": [{"role": "user", "content": [{"text": prompt}]}]},
+                                  "parameters": {"prompt_extend": True, "watermark": False, "n": 1, "size": "1024*1024"}},
+                            timeout=120, proxies={"http": "", "https": ""})
+                        result = resp.json()
+                        if resp.status_code == 200:
+                            img_url = result["output"]["choices"][0]["message"]["content"][0]["image"]
+                            st.image(img_url, caption=f"图{i+1}【{类型}】- {产品名全套}", width=500)
+                        else:
+                            st.warning(f"⚠️ 第{i+1}张生成失败")
+                    except Exception as e:
+                        st.warning(f"⚠️ 第{i+1}张出错：{str(e)}")
+                    
+                    进度条.progress((i + 1) / 7)
+                
+                状态文字.success("✅ 全套7张图生成完成！右键每张图片可另存为")
+                进度条.empty()
