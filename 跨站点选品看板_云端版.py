@@ -19,12 +19,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DIFY_BASE = "https://api.dify.ai/v1/workflows/run"
 DIFY_HEADERS = {"Content-Type": "application/json"}
 
-DIFY_选品分析_KEY = "app-M8tVPeleI3cSyIYwum1iuQQZ"
-DIFY_Listing_KEY = "app-b4XoJl1VD5WRncIMMbg2DCvT"
+DIFY_选品分析_KEY = os.environ.get("DIFY_SELECTION_KEY", "")
+DIFY_Listing_KEY = os.environ.get("DIFY_LISTING_KEY", "")
 
 # ===== 通义万相 API 配置 =====
-BAILIAN_KEY = "sk-ws-H.RXRMXIH.GSAm.MEUCIBMygsU2CMp_WrFUmavnR_e4y79_2Z-2rTaeFy0M5SUFAiEAybVVHlhD_FMvjwXOIOT7YzaDVENgtC-IcaSWnTwAZNw"
-BAILIAN_HOST = "https://ws-mowi5ku4xbnp491l.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation"
+BAILIAN_KEY = os.environ.get("BAILIAN_KEY", "")
+BAILIAN_HOST = os.environ.get("BAILIAN_HOST", "https://ws-mowi5ku4xbnp491l.cn-beijing.maas.aliyuncs.com/api/v1/services/aigc/multimodal-generation/generation")
 
 # ===== 品类→英文关键词 映射（用于交叉验证）=====
 品类关键词映射 = {
