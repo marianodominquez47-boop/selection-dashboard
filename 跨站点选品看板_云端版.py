@@ -543,20 +543,31 @@ with tab3:
                 for i, (prompt, 类型) in enumerate(zip(prompts, 图片类型)):
                     状态文字.info(f"📸 正在生成第{i+1}张：{类型}")
                     
-                    try:
-                        resp = requests.post(BAILIAN_HOST,
-                            headers={"Content-Type": "application/json", "Authorization": f"Bearer {BAILIAN_KEY}"},
-                            json={"model": "wan2.6-t2i", "input": {"messages": [{"role": "user", "content": [{"text": prompt}]}]},
-                                  "parameters": {"prompt_extend": True, "watermark": False, "n": 1, "size": "1024*1024"}},
-                            timeout=120, proxies={"http": "", "https": ""})
-                        result = resp.json()
-                        if resp.status_code == 200:
-                            img_url = result["output"]["choices"][0]["message"]["content"][0]["image"]
-                            st.image(img_url, caption=f"图{i+1}【{类型}】- {产品名全套}", width=500)
-                        else:
-                            st.warning(f"⚠️ 第{i+1}张生成失败")
-                    except Exception as e:
-                        st.warning(f"⚠️ 第{i+1}张出错：{str(e)}")
+                    # 自动重试1次
+                    success = False
+                    for attempt in range(2):
+                        try:
+                            resp = requests.post(BAILIAN_HOST,
+                                headers={"Content-Type": "application/json", "Authorization": f"Bearer {BAILIAN_KEY}"},
+                                json={"model": "wan2.6-t2i", "input": {"messages": [{"role": "user", "content": [{"text": prompt}]}]},
+                                      "parameters": {"prompt_extend": True, "watermark": False, "n": 1, "size": "1024*1024"}},
+                                timeout=120, proxies={"http": "", "https": ""})
+                            result = resp.json()
+                            if resp.status_code == 200:
+                                img_url = result["output"]["choices"][0]["message"]["content"][0]["image"]
+                                st.image(img_url, caption=f"图{i+1}【{类型}】- {产品名全套}", width=500)
+                                success = True
+                                break
+                            else:
+                                if attempt == 0:
+                                    状态文字.info(f"🔄 第{i+1}张重试中...")
+                                else:
+                                    st.warning(f"⚠️ 第{i+1}张生成失败")
+                        except Exception as e:
+                            if attempt == 0:
+                                状态文字.info(f"🔄 第{i+1}张超时，正在重试...")
+                            else:
+                                st.warning(f"⚠️ 第{i+1}张出错：{str(e)[:80]}")
                     
                     进度条.progress((i + 1) / 7)
                 
